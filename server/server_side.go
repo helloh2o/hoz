@@ -1,11 +1,11 @@
 package main
 
 import (
-	"leango/hoz"
 	"github.com/google/gops/agent"
+	"hoz"
 	"log"
-	_ "net/http/pprof"
 	"net/http"
+	_ "net/http/pprof"
 )
 
 func main() {
