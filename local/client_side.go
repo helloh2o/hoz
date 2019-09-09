@@ -1,24 +1,26 @@
 package main
 
 import (
-	"github.com/google/gops/agent"
-	"hoz"
-	"log"
-	"net/http"
-	_ "net/http/pprof"
+	"leango/hoz"
+	//_ "net/http/pprof"
+	//"net/http"
+	"flag"
+)
+
+var (
+	addr     = flag.String("addr", ":1080", "Local hoz listen address")
+	remote   = flag.String("remote", "127.0.0.1:10800", "Remote hoz server address")
+	password = flag.String("password", "oor-!@adDxS$&(dl/*?", "Cipher password string")
 )
 
 func main() {
-	if err := agent.Listen(agent.Options{}); err != nil {
-		log.Fatal(err)
-	}
 	s := hoz.NewServer(hoz.Config{
-		Addr:       ":1080",
-		RemoteAddr: "127.0.0.1:10800",
-		Cipher:     "oor-!@adDxS$&(dl/*?",
+		Addr:       *addr,
+		RemoteAddr: *remote,
+		Cipher:     *password,
 	})
-	go func() {
+	/*go func() {
 		http.ListenAndServe(":6061", nil)
-	}()
+	}()*/
 	s.Start()
 }
