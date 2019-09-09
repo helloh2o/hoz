@@ -36,7 +36,7 @@ func (c *Xconn) handle() {
 	//Decrypt Server side
 	if c.s.RemoteAddr == "" {
 		// read pkg length
-		data, err := c.readPackageFrom(c.conn,buf)
+		data, err := c.readPackageFrom(c.conn, buf)
 		if err != nil {
 			LOG.Println(err)
 			return
@@ -59,7 +59,7 @@ func (c *Xconn) handle() {
 			if err != nil {
 				return
 			}
-			_ ,err = c.pkgWriteTo(established, c.conn)
+			_, err = c.pkgWriteTo(established, c.conn)
 			if err == nil {
 				LOG.Println("Notify Connection established succeed.")
 			}
@@ -84,7 +84,7 @@ func (c *Xconn) handle() {
 		}()
 		for {
 			// read pkg length
-			data, err = c.readPackageFrom(c.conn,buf)
+			data, err = c.readPackageFrom(c.conn, buf)
 			if err != nil {
 				LOG.Println(err)
 				return
@@ -107,7 +107,7 @@ func (c *Xconn) handle() {
 			remote.Close()
 		}()
 		for {
-			pkg, err := c.readPackageFrom(remote,buf)
+			pkg, err := c.readPackageFrom(remote, buf)
 			if err != nil {
 				//LOG.Printf("Client side closed %s\n", err.Error())
 				return
@@ -119,7 +119,7 @@ func (c *Xconn) handle() {
 		}
 	}
 }
-func (c *Xconn) readPackageFrom(from net.Conn,buf []byte) ([]byte, error) {
+func (c *Xconn) readPackageFrom(from net.Conn, buf []byte) ([]byte, error) {
 	n, er := io.ReadFull(from, buf[:4])
 	if er != nil {
 		return nil, er
@@ -139,6 +139,11 @@ func (c *Xconn) readPackageFrom(from net.Conn,buf []byte) ([]byte, error) {
 	return data, nil
 }
 func (c *Xconn) encryptFromTo(from io.Reader, to io.Writer) (n int, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			LOG.Printf("recover from encryptFromTo, %v \n", debug.Stack())
+		}
+	}()
 	buf := make([]byte, 32*1024-4)
 	for {
 		n, er := from.Read(buf)

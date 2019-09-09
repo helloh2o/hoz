@@ -2,8 +2,10 @@ package hoz
 
 import (
 	"net"
+	"hoz/cipher"
+	"time"
 	"strings"
-	"leango/hoz/cipher"
+	"errors"
 )
 
 type Server struct {
@@ -23,20 +25,27 @@ func (s *Server) Start() {
 	if err != nil {
 		LOG.Printf("server startup err %v \n", err)
 	}
+	pass := strings.Split(s.Config.Cipher, "://")
+	if len(pass) != 2 {
+		LOG.Fatal(errors.New("Cipher must be like scheme://password "))
+		return
+	}
+	switch pass[0] {
+	case "oor":
+		s.cipher = cipher.NewOor([]byte(pass[1]))
+		LOG.Printf("scheme=oor, password=%s\n", pass[1])
+	default:
+		s.cipher = &cipher.OORR{}
+	}
 	LOG.Printf("Server startup, listen on %s\n", s.Config.Addr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			LOG.Printf("Accept connection err %v \n", err)
+			time.Sleep(time.Nanosecond * 100)
+			continue
 		}
-		var nc Connection
-		switch {
-		case strings.Index(s.Config.Cipher, "oor") == 0:
-			s.cipher = cipher.NewOor([]byte(s.Config.Cipher[3:]))
-		default:
-			s.cipher = &cipher.OORR{}
-		}
-		nc = &Xconn{conn, s}
+		nc := &Xconn{conn, s}
 		go nc.handle()
 	}
 }
