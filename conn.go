@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 	"runtime/debug"
+	"fmt"
 )
 
 type Connection interface {
@@ -41,7 +42,7 @@ func (c *Xconn) handle() {
 			LOG.Println(err)
 			return
 		}
-		// TODO handshake
+		// TODO more self handshake
 		// parse host
 		br := bufio.NewReader(bytes.NewReader(data))
 		req, err := http.ReadRequest(br)
@@ -50,8 +51,10 @@ func (c *Xconn) handle() {
 			return
 		}
 		host := req.URL.Host
-		if strings.Index(host, ":") == -1 {
+		if len(host) > 0 && strings.Index(host, ":") == -1 {
 			host += ":80"
+		} else if host == "" {
+			host = fmt.Sprint(req.Header.Get("Shost"), ":", req.Header.Get("Sport"))
 		}
 		if req.Method == "CONNECT" {
 			established := []byte("HTTP/1.1 200 Connection established\r\n\r\n")
@@ -61,16 +64,27 @@ func (c *Xconn) handle() {
 			}
 			_, err = c.pkgWriteTo(established, c.conn)
 			if err == nil {
-				LOG.Println("Notify Connection established succeed.")
+				LOG.Println("Connection established succeed.")
+			} else {
+				return
 			}
 		}
 		// dial remote
 		remote, err = net.DialTimeout("tcp", host, time.Second*5)
 		if err != nil {
-			LOG.Printf("DialTimeout remote error %v\n", err)
+			LOG.Printf("dial imeout remote error %v\n", err)
 			return
 		}
-		if req.Method != "CONNECT" {
+		switch req.Method {
+		case "SOCKS5":
+			// response socks5 established
+			ok := c.writeExBytes([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, c.conn)
+			if !ok {
+				return
+			}
+		case "CONNECT":
+			// do nothing
+		default:
 			// write pkg to real host
 			_, err = c.pkgWriteTo(data, remote)
 			if err != nil {
@@ -95,11 +109,35 @@ func (c *Xconn) handle() {
 			}
 		}
 	} else {
-		// TODO handshake
+		// TODO more self handshake
 		//Encrypt Client Side
 		remote, err := net.DialTimeout("tcp", c.s.RemoteAddr, time.Second*5)
 		if err != nil {
 			LOG.Printf("net dial failed err %s >> %s\n", err.Error(), c.s.RemoteAddr)
+			return
+		}
+		// try handshake socks5
+		ok, data, err := c.handshakeSocks()
+		if ok {
+			// socks5 read
+			ok, data, err = c.parseSocks()
+			if ok {
+				// send socks5 to http
+				ok = c.writeExBytes(data, remote)
+				if !ok {
+					return
+				}
+			} else {
+				return
+			}
+		} else if data != nil {
+			// http read bytes to remote
+			ok = c.writeExBytes(data, remote)
+			if !ok {
+				return
+			}
+		} else {
+			// socks5 ver check failed
 			return
 		}
 		go func() {
@@ -119,6 +157,55 @@ func (c *Xconn) handle() {
 		}
 	}
 }
+
+func (c *Xconn) writeExBytes(data [] byte, remote net.Conn) bool {
+	endata, err := c.s.cipher.Encrypt(data)
+	if err != nil {
+		LOG.Printf("encrypt http data err %v\n", err)
+		return false
+	}
+	_, err = remote.Write(endata)
+	if err != nil {
+		return false
+	}
+	return true
+}
+func (c *Xconn) handshakeSocks() (bool, []byte, error) {
+	buf := make([]byte, 1024)
+	n, er := io.ReadAtLeast(c.conn, buf, 3)
+	if er != nil {
+		return false, nil, er
+	}
+	// socks5
+	if buf[0] == 0x05 {
+		ok := handshake(buf[:n], c.conn)
+		return ok, nil, nil
+	}
+	// http, buf is left byte
+	return false, buf[:n], nil
+}
+
+func (c *Xconn) parseSocks() (bool, []byte, error) {
+	buf := make([]byte, 128)
+	c.conn.SetReadDeadline(time.Now().Add(time.Second * 2))
+	n, er := io.ReadAtLeast(c.conn, buf, 6)
+	c.conn.SetReadDeadline(time.Time{})
+	if er != nil {
+		return false, nil, er
+	}
+	// socks5
+	if buf[0] == 0x05 {
+		to5, ok := parseSocks5Request(buf[:n])
+		if !ok {
+			c.conn.Write(to5)
+			return false, nil, nil
+		}
+		return true, to5, nil
+	}
+	// http, buf is left byte
+	return false, buf[:n], nil
+}
+
 func (c *Xconn) readPackageFrom(from net.Conn, buf []byte) ([]byte, error) {
 	n, er := io.ReadFull(from, buf[:4])
 	if er != nil {
