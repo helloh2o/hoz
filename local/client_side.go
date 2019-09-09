@@ -14,6 +14,7 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	s := hoz.NewServer(hoz.Config{
 		Addr:       *addr,
 		RemoteAddr: *remote,
