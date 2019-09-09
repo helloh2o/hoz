@@ -1,11 +1,14 @@
-### 连接协议
-目前实现了HTTP协议，local和server直接连接
+### Connection Protocol
+Currently implemented HTTP protocol, local and server are directly connected
 
-### 数据通信协议
-包[head,body],head为4字节包含当前加密包长度，body为加密的byte字节，读取完成后进行解密
+### Data Communication Protocol
+The package [head, body], head is 4 bytes containing the current encrypted packet length, and the body is the encrypted byte byte. After the read is completed, the decryption is performed.
 
-### 关于加密
-默认为自己实现的OORR，主要是对byte进行或与运算，修改所有的byte达到加密的目的，速度很快，耗费资源少
+### About encryption
+The default is OORR, which is implemented by itself. It is mainly used to perform or perform operations on bytes. Modify all bytes to achieve the purpose of encryption. It is fast and consumes less resources.
 
+### How to use it
+./client_side -addr ":1080" -remote "127.0.0.1:10800" -password "oor-!@adDxS$&(dl/*?" <br>
+./server_side -addr ":10800" -password "oor-!@adDxS$&(dl/*?"
 ### TODO
-SOCKS5 协议
+SOCKS5 protocol
