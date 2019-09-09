@@ -11,6 +11,7 @@ var (
 )
 
 func main() {
+	flag.Parse()
 	s := hoz.NewServer(hoz.Config{
 		Addr:   *addr,
 		Cipher: *password,
