@@ -1,9 +1,9 @@
 package hoz
 
 import (
-	"hoz/cipher"
 	"net"
 	"strings"
+	"leango/hoz/cipher"
 )
 
 type Server struct {
@@ -32,8 +32,7 @@ func (s *Server) Start() {
 		var nc Connection
 		switch {
 		case strings.Index(s.Config.Cipher, "oor") == 0:
-			key := []byte(s.Config.Cipher[3:])
-			s.cipher = &cipher.OORR{SecretKey: key, KeyMaxIndex: len(key) - 1}
+			s.cipher = cipher.NewOor([]byte(s.Config.Cipher[3:]))
 		default:
 			s.cipher = &cipher.OORR{}
 		}
