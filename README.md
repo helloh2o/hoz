@@ -1,3 +1,4 @@
+## Hoz HTTP & SOCKS5 security proxy
 ### Connection Protocol
 Currently implemented HTTP,SOCKS5 protocol, local and server are encrypted connected
 
