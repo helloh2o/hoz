@@ -14,7 +14,7 @@ func NewOor(key []byte) *OORR {
 	or := new(OORR)
 	or.password = key
 	or.index = len(key) - 1
-	if or.index >= 0 {
+	if or.index > 0 {
 		for i := 0; i < 32*1024; i++ {
 			or.remainder = append(or.remainder, or.password[i%or.index])
 		}
@@ -25,7 +25,7 @@ func NewOor(key []byte) *OORR {
 func (or *OORR) Encrypt(src []byte) ([]byte, error) {
 	length := len(src)
 	for i, b := range src {
-		if or.index >= 0 {
+		if or.index > 0 {
 			src[i] = b ^ byte(i) ^ or.remainder[i]
 		} else {
 			src[i] = b ^ byte(i)
@@ -40,7 +40,7 @@ func (or *OORR) Encrypt(src []byte) ([]byte, error) {
 
 func (or *OORR) Decrypt(src []byte) ([]byte, error) {
 	for i, b := range src {
-		if or.index >= 0 {
+		if or.index > 0 {
 			src[i] = b ^ byte(i) ^ or.remainder[i]
 		} else {
 			src[i] = b ^ byte(i)
