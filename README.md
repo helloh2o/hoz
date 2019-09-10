@@ -10,3 +10,4 @@ The default is OORR, which is implemented by myself. It is mainly used to perfor
 ### How to use it
 ./client_side -addr ":1080" -remote "127.0.0.1:10800" -password "oor://your-password-xxx" <br>
 ./server_side -addr ":10800" -password "oor://your-password-xxx"
+#### [hoz_1.0.2](https://github.com/helloh2o/hoz/releases)
