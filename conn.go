@@ -3,7 +3,6 @@ package hoz
 import (
 	"net"
 	"io"
-	"encoding/binary"
 	"bytes"
 	"net/http"
 	"bufio"
@@ -11,19 +10,19 @@ import (
 	"time"
 	"runtime/debug"
 	"fmt"
+	"hoz/pkg"
 )
 
-type Connection interface {
-	handle()
+type Connection struct {
+	reader pkg.PackageReader
+	writer pkg.PackageWriter
+	conn   net.Conn
+	s      *Server
 }
 
-type Xconn struct {
-	conn net.Conn
-	s    *Server
-}
-
-func (c *Xconn) handle() {
+func (c *Connection) handle() {
 	var remote net.Conn
+	var err error
 	buf := make([]byte, 32*1024)
 	defer func() {
 		if r := recover(); r != nil {
@@ -34,17 +33,16 @@ func (c *Xconn) handle() {
 			remote.Close()
 		}
 	}()
-	//Decrypt Server side
 	if c.s.RemoteAddr == "" {
+		// TODO hoz server side more self handshake
 		// read pkg length
-		data, err := c.readPackageFrom(c.conn, buf)
+		pack, err := c.reader.ReadPackageFrom(c.conn, buf)
 		if err != nil {
 			LOG.Println(err)
 			return
 		}
-		// TODO more self handshake
 		// parse host
-		br := bufio.NewReader(bytes.NewReader(data))
+		br := bufio.NewReader(bytes.NewReader(pack))
 		req, err := http.ReadRequest(br)
 		if err != nil {
 			LOG.Printf("ReadRequest error %v\n", err)
@@ -56,21 +54,8 @@ func (c *Xconn) handle() {
 		} else if host == "" {
 			host = fmt.Sprint(req.Header.Get("Shost"), ":", req.Header.Get("Sport"))
 		}
-		if req.Method == "CONNECT" {
-			established := []byte("HTTP/1.1 200 Connection established\r\n\r\n")
-			established, err = c.s.cipher.Encrypt(established)
-			if err != nil {
-				return
-			}
-			_, err = c.pkgWriteTo(established, c.conn)
-			if err == nil {
-				LOG.Println("Connection established succeed.")
-			} else {
-				return
-			}
-		}
 		// dial remote
-		remote, err = net.DialTimeout("tcp", host, time.Second*5)
+		remote, err = net.DialTimeout("tcp", host, time.Second*3)
 		if err != nil {
 			LOG.Printf("dial imeout remote error %v\n", err)
 			return
@@ -83,44 +68,54 @@ func (c *Xconn) handle() {
 				return
 			}
 		case "CONNECT":
-			// do nothing
-		default:
-			// write pkg to real host
-			_, err = c.pkgWriteTo(data, remote)
+			established := []byte("HTTP/1.1 200 Connection established\r\n\r\n")
+			established, err = c.s.cipher.Encrypt(established)
 			if err != nil {
 				return
 			}
+			_, err = c.writer.Write(established, c.conn)
+			if err == nil {
+				LOG.Println("Connection established succeed.")
+			} else {
+				return
+			}
+		default:
+			// write http pack to real host
+			_, err = c.writer.Write(pack, remote)
+			if err != nil {
+				return
+			}
+			LOG.Println("HTTP write request.")
 		}
 		// server encrypt remote to client
 		go func() {
-			c.encryptFromTo(remote, c.conn)
+			c.writer.EncryptFromTo(remote, c.conn)
 			c.conn.Close()
 		}()
 		for {
 			// read pkg length
-			data, err = c.readPackageFrom(c.conn, buf)
+			pack, err = c.reader.ReadPackageFrom(c.conn, buf)
 			if err != nil {
 				LOG.Println(err)
 				return
 			}
-			_, err = c.pkgWriteTo(data, remote)
+			_, err = c.writer.Write(pack, remote)
 			if err != nil {
 				return
 			}
 		}
 	} else {
-		// TODO more self handshake
-		//Encrypt Client Side
-		remote, err := net.DialTimeout("tcp", c.s.RemoteAddr, time.Second*5)
+		// TODO hoz client side more self handshake
+		remote, err = net.DialTimeout("tcp", c.s.RemoteAddr, time.Second*5)
 		if err != nil {
 			LOG.Printf("net dial failed err %s >> %s\n", err.Error(), c.s.RemoteAddr)
 			return
 		}
 		// try handshake socks5
-		ok, data, err := c.handshakeSocks()
+		ok, data, _ := c.handshakeSocks(buf)
 		if ok {
 			// socks5 read
-			ok, data, err = c.parseSocks()
+			ok, data, err = c.parseSocks(buf)
 			if ok {
 				// send socks5 to http
 				ok = c.writeExBytes(data, remote)
@@ -141,16 +136,16 @@ func (c *Xconn) handle() {
 			return
 		}
 		go func() {
-			c.encryptFromTo(c.conn, remote)
+			c.writer.EncryptFromTo(c.conn, remote)
 			remote.Close()
 		}()
 		for {
-			pkg, err := c.readPackageFrom(remote, buf)
+			pack, err := c.reader.ReadPackageFrom(remote, buf)
 			if err != nil {
 				//LOG.Printf("Client side closed %s\n", err.Error())
 				return
 			}
-			_, err = c.pkgWriteTo(pkg, c.conn)
+			_, err = c.writer.Write(pack, c.conn)
 			if err != nil {
 				return
 			}
@@ -158,7 +153,7 @@ func (c *Xconn) handle() {
 	}
 }
 
-func (c *Xconn) writeExBytes(data [] byte, remote net.Conn) bool {
+func (c *Connection) writeExBytes(data [] byte, remote net.Conn) bool {
 	endata, err := c.s.cipher.Encrypt(data)
 	if err != nil {
 		LOG.Printf("encrypt http data err %v\n", err)
@@ -170,9 +165,24 @@ func (c *Xconn) writeExBytes(data [] byte, remote net.Conn) bool {
 	}
 	return true
 }
-func (c *Xconn) handshakeSocks() (bool, []byte, error) {
-	buf := make([]byte, 1024)
-	n, er := io.ReadAtLeast(c.conn, buf, 3)
+func (c *Connection) handshakeSocks(buf []byte) (bool, []byte, error) {
+	handshake := func(pkg []byte, conn net.Conn) bool {
+		ver := pkg[0]
+		if ver != 0x05 {
+			LOG.Printf("unsupport socks version %d \n", ver)
+			return false
+		}
+		resp := pkg[:0]
+		resp = append(resp, 0x05)
+		resp = append(resp, 0x00)
+		n, err := conn.Write(resp)
+		if n != 2 || err != nil {
+			return false
+		}
+		// handshake over
+		return true
+	}
+	n, er := io.ReadAtLeast(c.conn, buf,3)
 	if er != nil {
 		return false, nil, er
 	}
@@ -185,8 +195,7 @@ func (c *Xconn) handshakeSocks() (bool, []byte, error) {
 	return false, buf[:n], nil
 }
 
-func (c *Xconn) parseSocks() (bool, []byte, error) {
-	buf := make([]byte, 128)
+func (c *Connection) parseSocks(buf []byte) (bool, []byte, error) {
 	c.conn.SetReadDeadline(time.Now().Add(time.Second * 2))
 	n, er := io.ReadAtLeast(c.conn, buf, 6)
 	c.conn.SetReadDeadline(time.Time{})
@@ -204,69 +213,4 @@ func (c *Xconn) parseSocks() (bool, []byte, error) {
 	}
 	// http, buf is left byte
 	return false, buf[:n], nil
-}
-
-func (c *Xconn) readPackageFrom(from net.Conn, buf []byte) ([]byte, error) {
-	n, er := io.ReadFull(from, buf[:4])
-	if er != nil {
-		return nil, er
-	}
-	pkgLen := binary.BigEndian.Uint32(buf[:4])
-	//LOG.Printf("Read Package Len %d\n", pkgLen)
-	n, er = io.ReadFull(from, buf[:pkgLen])
-	if er != nil {
-		//LOG.Printf("Has read size %d\n", n)
-		return nil, er
-	}
-	data := buf[:n]
-	data, er = c.s.cipher.Decrypt(data)
-	if er != nil {
-		return nil, er
-	}
-	return data, nil
-}
-func (c *Xconn) encryptFromTo(from io.Reader, to io.Writer) (n int, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			LOG.Printf("recover from encryptFromTo, %v \n", debug.Stack())
-		}
-	}()
-	buf := make([]byte, 32*1024-4)
-	for {
-		n, er := from.Read(buf)
-		if er != nil {
-			return n, er
-		}
-		if n > 0 {
-			endata, err := c.s.cipher.Encrypt(buf[:n])
-			if err != nil {
-				return n, err
-			}
-			//LOG.Printf("encryptFromTo %d \n%v\n", len(endata), endata)
-			n, er = c.pkgWriteTo(endata, to)
-			if er != nil {
-				return n, er
-			}
-			//LOG.Printf("write encrypt data  %d \n", n)
-
-		}
-	}
-}
-func (c *Xconn) pkgWriteTo(data []byte, writer io.Writer) (n int, err error) {
-	lens := len(data)
-	writen := 0
-	for {
-		n, err = writer.Write(data)
-		if err != nil {
-			return writen, err
-		}
-		if n > 0 {
-			writen += n
-		}
-		if writen == lens {
-			break
-		}
-	}
-	//LOG.Println("pkgWriteTo ok")
-	return lens, nil
 }

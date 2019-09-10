@@ -7,21 +7,9 @@ import (
 	"strconv"
 )
 
-func handshake(pkg []byte, conn net.Conn) bool {
-	ver := pkg[0]
-	if ver != 0x05 {
-		LOG.Printf("unsupport socks version %d \n", ver)
-		return false
-	}
-	resp := pkg[:0]
-	resp = append(resp, 0x05)
-	resp = append(resp, 0x00)
-	n, err := conn.Write(resp)
-	if n != 2 || err != nil {
-		return false
-	}
-	// handshake over
-	return true
+type socks5 interface {
+	handshakeSocks([]byte) (bool, []byte, error)
+	parseSocks([]byte) (bool, []byte, error)
 }
 
 func parseSocks5Request(b []byte) ([]byte, bool) {

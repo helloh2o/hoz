@@ -6,6 +6,8 @@ import (
 	"time"
 	"strings"
 	"errors"
+	"hoz/rwder"
+	"hoz/pkg"
 )
 
 type Server struct {
@@ -30,12 +32,16 @@ func (s *Server) Start() {
 		LOG.Fatal(errors.New("Cipher must be like scheme://password "))
 		return
 	}
+	var reader pkg.PackageReader
+	var writer pkg.PackageWriter
 	switch pass[0] {
 	case "oor":
 		s.cipher = cipher.NewOor([]byte(pass[1]))
-		LOG.Printf("scheme=oor, password=%s\n", pass[1])
+		reader = rwder.NewOorReader(s.cipher)
+		writer = rwder.NewOorWriter(s.cipher)
+		LOG.Printf("cipher_name=oor, password=%s\n", pass[1])
 	default:
-		s.cipher = &cipher.OORR{}
+		LOG.Fatalf("Unsuport cipher %s \n", pass[0])
 	}
 	LOG.Printf("Server startup, listen on %s\n", s.Config.Addr)
 	for {
@@ -45,7 +51,7 @@ func (s *Server) Start() {
 			time.Sleep(time.Nanosecond * 100)
 			continue
 		}
-		nc := &Xconn{conn, s}
+		nc := &Connection{s: s, conn: conn, reader: reader, writer: writer}
 		go nc.handle()
 	}
 }
