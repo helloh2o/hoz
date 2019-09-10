@@ -1,8 +1,6 @@
 ## HTTP & SOCKS5 security proxy
-### Connection Protocol
-Currently implemented HTTP,SOCKS5 protocol, local and server are encrypted connected
-
-### Data Communication Protocol
+Currently implemented HTTP,SOCKS5 protocol
+### Communication Protocol
 The package <b>[head, body]</b>, head is 4 bytes containing the current encrypted packet length, and the body is the encrypted bytes. After the read is completed, the decryption is performed.
 #### implement your communication Protocol by implement pkg.PackageReader & pkg.PackageWriter
 
