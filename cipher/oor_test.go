@@ -1,8 +1,8 @@
 package cipher
 
 import (
-	"testing"
 	"log"
+	"testing"
 	"time"
 )
 
