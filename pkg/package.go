@@ -1,8 +1,8 @@
 package pkg
 
 import (
-	"net"
 	"io"
+	"net"
 )
 
 type PackageReader interface {

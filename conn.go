@@ -1,16 +1,16 @@
 package hoz
 
 import (
-	"net"
-	"io"
-	"bytes"
-	"net/http"
 	"bufio"
-	"strings"
-	"time"
-	"runtime/debug"
+	"bytes"
 	"fmt"
 	"hoz/pkg"
+	"io"
+	"net"
+	"net/http"
+	"runtime/debug"
+	"strings"
+	"time"
 )
 
 type Connection struct {
@@ -153,7 +153,7 @@ func (c *Connection) handle() {
 	}
 }
 
-func (c *Connection) writeExBytes(data [] byte, remote net.Conn) bool {
+func (c *Connection) writeExBytes(data []byte, remote net.Conn) bool {
 	endata, err := c.s.cipher.Encrypt(data)
 	if err != nil {
 		LOG.Printf("encrypt http data err %v\n", err)
@@ -182,7 +182,7 @@ func (c *Connection) handshakeSocks(buf []byte) (bool, []byte, error) {
 		// handshake over
 		return true
 	}
-	n, er := io.ReadAtLeast(c.conn, buf,3)
+	n, er := io.ReadAtLeast(c.conn, buf, 3)
 	if er != nil {
 		return false, nil, er
 	}
