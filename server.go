@@ -6,7 +6,6 @@ import (
 	"time"
 	"strings"
 	"errors"
-	"hoz/rwder"
 	"hoz/pkg"
 )
 
@@ -36,9 +35,10 @@ func (s *Server) Start() {
 	var writer pkg.PackageWriter
 	switch pass[0] {
 	case "oor":
-		s.cipher = cipher.NewOor([]byte(pass[1]))
-		reader = rwder.NewOorReader(s.cipher)
-		writer = rwder.NewOorWriter(s.cipher)
+		oor := cipher.NewOor([]byte(pass[1]))
+		s.cipher = oor
+		reader = oor
+		writer = oor
 		LOG.Printf("cipher_name=oor, password=%s\n", pass[1])
 	default:
 		LOG.Fatalf("Unsuport cipher %s \n", pass[0])
