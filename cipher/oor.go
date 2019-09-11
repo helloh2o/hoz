@@ -2,8 +2,8 @@ package cipher
 
 import (
 	"encoding/binary"
-	"net"
 	"io"
+	"net"
 )
 
 type OORR struct {
