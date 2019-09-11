@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,12 +22,13 @@ type Connection struct {
 }
 
 func (c *Connection) handle() {
+	tls := false
 	var remote net.Conn
 	var err error
 	buf := make([]byte, 32*1024)
 	defer func() {
 		if r := recover(); r != nil {
-			LOG.Printf("Recover from handle, Stack::\n%s\n", debug.Stack())
+			LOG.Printf("Recover from handle, %v, Stack::\n%s\n", r, debug.Stack())
 		}
 		c.conn.Close()
 		if remote != nil {
@@ -36,7 +38,8 @@ func (c *Connection) handle() {
 	if c.s.RemoteAddr == "" {
 		// TODO hoz server side more self handshake
 		// read pkg length
-		pack, err := c.reader.ReadPackageFrom(c.conn, buf)
+		pack, err := c.reader.ReadPackageFrom(c.conn, buf, tls)
+		//LOG.Println(string(pack))
 		if err != nil {
 			LOG.Println(err)
 			return
@@ -79,6 +82,7 @@ func (c *Connection) handle() {
 			} else {
 				return
 			}
+			tls = true
 		default:
 			// write http pack to real host
 			_, err = c.writer.Write(pack, remote)
@@ -89,12 +93,12 @@ func (c *Connection) handle() {
 		}
 		// server encrypt remote to client
 		go func() {
-			c.writer.EncryptFromTo(remote, c.conn)
+			c.writer.EncryptFromTo(remote, c.conn, tls)
 			c.conn.Close()
 		}()
 		for {
 			// read pkg length
-			pack, err = c.reader.ReadPackageFrom(c.conn, buf)
+			pack, err = c.reader.ReadPackageFrom(c.conn, buf, tls)
 			if err != nil {
 				LOG.Println(err)
 				return
@@ -126,6 +130,7 @@ func (c *Connection) handle() {
 				return
 			}
 		} else if data != nil {
+			//LOG.Println(string(data))
 			// http read bytes to remote
 			ok = c.writeExBytes(data, remote)
 			if !ok {
@@ -135,12 +140,18 @@ func (c *Connection) handle() {
 			// socks5 ver check failed
 			return
 		}
-		go func() {
-			c.writer.EncryptFromTo(c.conn, remote)
-			remote.Close()
-		}()
+		var one sync.Once
 		for {
-			pack, err := c.reader.ReadPackageFrom(remote, buf)
+			pack, err := c.reader.ReadPackageFrom(remote, buf, tls)
+			one.Do(func() {
+				if string(pack) == "HTTP/1.1 200 Connection established\r\n\r\n" {
+					tls = true
+				}
+				go func() {
+					c.writer.EncryptFromTo(c.conn, remote, tls)
+					remote.Close()
+				}()
+			})
 			if err != nil {
 				//LOG.Printf("Client side closed %s\n", err.Error())
 				return

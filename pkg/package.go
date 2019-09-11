@@ -6,12 +6,14 @@ import (
 )
 
 type PackageReader interface {
-	ReadPackageFrom(from net.Conn, buf []byte) ([]byte, error)
+	// tls connection or not
+	ReadPackageFrom(from net.Conn, buf []byte, tls bool) ([]byte, error)
 }
 
 type PackageWriter interface {
 	rawWriter
-	EncryptFromTo(from io.Reader, to io.Writer) (n int, err error)
+	// tls connection or not
+	EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, err error)
 }
 
 type rawWriter interface {

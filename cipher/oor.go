@@ -51,20 +51,30 @@ func (or *OORR) Decrypt(src []byte) ([]byte, error) {
 	return src, nil
 }
 
-func (or *OORR) ReadPackageFrom(from net.Conn, buf []byte) ([]byte, error) {
-	n, er := io.ReadFull(from, buf[:4])
-	if er != nil {
-		return nil, er
+func (or *OORR) ReadPackageFrom(from net.Conn, buf []byte, tls bool) ([]byte, error) {
+	var data []byte
+	var er error
+	var n int
+	if !tls {
+		n, er = io.ReadFull(from, buf[:4])
+		if er != nil {
+			return nil, er
+		}
+		pkgLen := binary.BigEndian.Uint32(buf[:4])
+		//log.Printf("Read Package Len %d\n", pkgLen)
+		n, er = io.ReadFull(from, buf[:pkgLen])
+		if er != nil {
+			//log.Printf("Has read size %d\n", n)
+			return nil, er
+		}
+		data, er = or.Decrypt(buf[:n])
+	} else {
+		n, er = from.Read(buf)
+		if er != nil {
+			return nil, er
+		}
+		data = buf[:n]
 	}
-	pkgLen := binary.BigEndian.Uint32(buf[:4])
-	//log.Printf("Read Package Len %d\n", pkgLen)
-	n, er = io.ReadFull(from, buf[:pkgLen])
-	if er != nil {
-		//log.Printf("Has read size %d\n", n)
-		return nil, er
-	}
-	data := buf[:n]
-	data, er = or.Decrypt(data)
 	//log.Printf("raw data is \n %s\n", string(data))
 	if er != nil {
 		return nil, er
@@ -72,7 +82,7 @@ func (or *OORR) ReadPackageFrom(from net.Conn, buf []byte) ([]byte, error) {
 	return data, nil
 }
 
-func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer) (n int, err error) {
+func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, err error) {
 	defer func() {
 		recover()
 	}()
@@ -83,13 +93,19 @@ func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer) (n int, err error) {
 			return n, er
 		}
 		if n > 0 {
-			endata, err := or.Encrypt(buf[:n])
-			if err != nil {
-				return n, err
+			var data []byte
+			var err error
+			if !tls {
+				data, err = or.Encrypt(buf[:n])
+				if err != nil {
+					return n, err
+				}
+			} else {
+				data = buf[:n]
 			}
 			//log.Printf("EncryptFromTo %d \n%v\n", len(endata), endata)
 			// write
-			n, er = or.Write(endata, to)
+			n, er = or.Write(data, to)
 			if er != nil {
 				return n, er
 			}
