@@ -1,9 +1,9 @@
 package hoz
 
 import (
-	"net"
 	"bytes"
 	"fmt"
+	"net"
 	"strconv"
 )
 
@@ -40,8 +40,8 @@ func parseSocks5Request(b []byte) ([]byte, bool) {
 		switch b[3] {
 		case 0x01: //IP V4
 			host = net.IPv4(b[4], b[5], b[6], b[7]).String()
-		case 0x03:                  //Domain
-			host = string(b[5:n-2]) //b[4] domain length
+		case 0x03: //Domain
+			host = string(b[5 : n-2]) //b[4] domain length
 		case 0x04: //IP V6
 			host = net.IP{b[4], b[5], b[6], b[7], b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15], b[16], b[17], b[18], b[19]}.String()
 		}
@@ -53,7 +53,7 @@ func parseSocks5Request(b []byte) ([]byte, bool) {
 	} else {
 		// failed
 		resp[1] = 0x01
-		resp = append(resp, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00} ...)
+		resp = append(resp, []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...)
 	}
 	return resp, false
 }

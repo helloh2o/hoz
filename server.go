@@ -1,12 +1,12 @@
 package hoz
 
 import (
-	"net"
-	"hoz/cipher"
-	"time"
-	"strings"
 	"errors"
+	"hoz/cipher"
 	"hoz/pkg"
+	"net"
+	"strings"
+	"time"
 )
 
 type Server struct {
