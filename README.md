@@ -10,5 +10,5 @@ The default is OORR which is implemented by myself. It is mainly used to perform
 ### How to use it
 ./client_side -addr ":1080" -remote "127.0.0.1:10800" -password "oor://your-password-xxx" <br>
 ./server_side -addr ":10800" -password "oor://your-password-xxx"
-####  support oor -password "oor://password-xxx", salsa20 -password "sal://password-xxx", aes -password "aes://password-xxx"
+#### oor -password "oor://password-xxx", salsa20 -password "sal://password-xxx", aes -password "aes://password-xxx"
 #### [releases download](https://github.com/helloh2o/hoz/releases)
