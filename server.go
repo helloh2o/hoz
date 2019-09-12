@@ -31,18 +31,33 @@ func (s *Server) Start() {
 		LOG.Fatal(errors.New("Cipher must be like scheme://password "))
 		return
 	}
+	var waper cipher.Cipher
 	var reader pkg.PackageReader
 	var writer pkg.PackageWriter
-	switch pass[0] {
+	var cipherName = pass[0]
+	var key = pass[1]
+	switch cipherName {
 	case "oor":
-		oor := cipher.NewOor([]byte(pass[1]))
-		s.cipher = oor
-		reader = oor
-		writer = oor
-		LOG.Printf("cipher_name=oor, password=%s\n", pass[1])
+		waper = cipher.NewOor([]byte(key))
+	case "aes":
+		aes, err := cipher.NewAes([]byte(key))
+		if err != nil {
+			LOG.Fatalf("Init aes cipher error %v\n", err)
+		}
+		waper = aes
+	case "sal":
+		sa20, err := cipher.NewSalsa20([]byte(key))
+		if err != nil {
+			LOG.Fatalf("Init sa20 cipher error %v\n", err)
+		}
+		waper = sa20
 	default:
-		LOG.Fatalf("Unsuport cipher %s \n", pass[0])
+		LOG.Fatalf("Unsuport cipher %s \n", cipherName)
 	}
+	LOG.Printf("cipher_name=%s, password=%s\n", cipherName, key)
+	s.cipher = waper
+	reader = waper.(pkg.PackageReader)
+	writer = waper.(pkg.PackageWriter)
 	LOG.Printf("Server startup, listen on %s\n", s.Config.Addr)
 	for {
 		conn, err := ln.Accept()

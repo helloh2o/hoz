@@ -12,7 +12,7 @@ type OORR struct {
 	remainder []byte
 }
 
-func NewOor(key []byte) *OORR {
+func NewOor(key []byte) Cipher {
 	or := new(OORR)
 	or.password = key
 	or.index = len(key) - 1
@@ -86,7 +86,7 @@ func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, er
 	defer func() {
 		recover()
 	}()
-	buf := make([]byte, 32*1024-4)
+	buf := make([]byte, 32*1020)
 	for {
 		n, er := from.Read(buf)
 		if er != nil {

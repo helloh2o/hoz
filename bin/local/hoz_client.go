@@ -10,7 +10,7 @@ import (
 var (
 	addr     = flag.String("addr", ":1080", "Local hoz listen address")
 	remote   = flag.String("remote", "127.0.0.1:10800", "Remote hoz server address")
-	password = flag.String("password", "oor://!@adDxS$&(dl/*?QKc$mJ?PdTkajGzSNMILH{t4_hvFR>", "Cipher password string")
+	password = flag.String("password", "sal://!@adDxS$&(dl/*?QKc$mJ?PdTkajGzSNMILH{t4_hvFR>", "Cipher password string")
 )
 
 func main() {
