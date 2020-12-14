@@ -38,13 +38,12 @@ func (s *Server) Start() {
 	var key = pass[1]
 	switch cipherName {
 	case "oor":
-		waper = cipher.NewOor([]byte(key))
+		waper, err = cipher.NewXORCipher(key)
 	case "aes":
-		aes, err := cipher.NewAes([]byte(key))
+		waper, err = cipher.NewAes([]byte(key))
 		if err != nil {
 			LOG.Fatalf("Init aes cipher error %v\n", err)
 		}
-		waper = aes
 	case "sal":
 		sa20, err := cipher.NewSalsa20([]byte(key))
 		if err != nil {

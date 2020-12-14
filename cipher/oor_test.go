@@ -9,7 +9,7 @@ import (
 // 1GB data test
 func TestOORR_Encrypt(t *testing.T) {
 	data := []byte("12")
-	o := NewOor([]byte{})
+	o, _ := NewXORCipher("435p432;ga;dgkasd")
 	b := time.Now().Unix()
 	total := 1048576 * 512 * 2
 	for i := 0; i < 1048576*512; i++ {

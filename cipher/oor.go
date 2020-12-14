@@ -1,92 +1,94 @@
 package cipher
 
 import (
-	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"io"
 	"net"
+	"sync"
 )
 
-type OORR struct {
-	password  []byte
-	index     int
-	remainder []byte
+type XORCipher struct {
+	sync.RWMutex
+	password    []byte
+	pwdMaxIndex int
+	remainder   []byte
+	maxLen      int
 }
 
-func NewOor(key []byte) Cipher {
-	or := new(OORR)
-	or.password = key
-	or.index = len(key) - 1
-	if or.index > 0 {
-		for i := 0; i < 32*1024; i++ {
-			or.remainder = append(or.remainder, or.password[i%or.index])
-		}
+// 简单的混淆加密 maxBufferLen 加密数据最大长度
+func NewXORCipher(key string) (*XORCipher, error) {
+	if len(key) < 4 {
+		return nil, errors.New("XOR key must more than 4 characters")
 	}
-	return or
+	or := &XORCipher{}
+	or.password = []byte(hex.EncodeToString([]byte(key)))
+	or.pwdMaxIndex = len(or.password) - 1
+	or.updateMaxLen(8192)
+	return or, nil
 }
 
-func (or *OORR) Encrypt(src []byte) ([]byte, error) {
-	length := len(src)
-	for i, b := range src {
-		if or.index > 0 {
-			src[i] = b ^ byte(i) ^ or.remainder[i]
-		} else {
-			src[i] = b ^ byte(i)
-		}
+func (xor *XORCipher) updateMaxLen(max int) {
+	xor.Lock()
+	defer xor.Unlock()
+	xor.maxLen = max
+	for i := 0; i < xor.maxLen; i++ {
+		xor.remainder = append(xor.remainder, xor.password[i%xor.pwdMaxIndex])
 	}
-	head := make([]byte, 4)
-	binary.BigEndian.PutUint32(head, uint32(length))
-	data := src[:0]
-	data = append(head, src...)
-	return data, nil
 }
 
-func (or *OORR) Decrypt(src []byte) ([]byte, error) {
+func (xor *XORCipher) Encrypt(src []byte) ([]byte, error) {
+	xor.trySelfUpdate(len(src))
 	for i, b := range src {
-		if or.index > 0 {
-			src[i] = b ^ byte(i) ^ or.remainder[i]
-		} else {
-			src[i] = b ^ byte(i)
-		}
+		src[i] = b ^ byte(i%255) ^ xor.remainder[i]
 	}
 	return src, nil
 }
 
-func (or *OORR) ReadPackageFrom(from net.Conn, buf []byte, tls bool) ([]byte, error) {
+func (xor *XORCipher) Decrypt(src []byte) ([]byte, error) {
+	xor.trySelfUpdate(len(src))
+	for i, b := range src {
+		src[i] = b ^ byte(i%255) ^ xor.remainder[i]
+	}
+	return src, nil
+}
+
+// 更新长度
+func (xor *XORCipher) trySelfUpdate(length int) {
+	if length < 8192 {
+		return
+	}
+	xor.RLock()
+	if xor.maxLen < length {
+		xor.RUnlock()
+		xor.updateMaxLen(length)
+	} else {
+		xor.RUnlock()
+	}
+}
+
+func (xor *XORCipher) ReadPackageFrom(from net.Conn, buf []byte, tls bool) ([]byte, error) {
 	var data []byte
 	var er error
 	var n int
-	if !tls {
-		n, er = io.ReadFull(from, buf[:4])
-		if er != nil {
-			return nil, er
-		}
-		pkgLen := binary.BigEndian.Uint32(buf[:4])
-		//log.Printf("Read Package Len %d\n", pkgLen)
-		n, er = io.ReadFull(from, buf[:pkgLen])
-		if er != nil {
-			//log.Printf("Has read size %d\n", n)
-			return nil, er
-		}
-		data, er = or.Decrypt(buf[:n])
-	} else {
-		n, er = from.Read(buf)
-		if er != nil {
-			return nil, er
-		}
-		data = buf[:n]
-	}
-	//log.Printf("raw data is \n %s\n", string(data))
+	n, er = from.Read(buf)
 	if er != nil {
 		return nil, er
 	}
+	/*if !tls {
+		data, _ = xor.Decrypt(buf[:n])
+	} else {
+		data = buf[:n]
+	}*/
+	data, _ = xor.Decrypt(buf[:n])
 	return data, nil
 }
 
-func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, err error) {
+func (xor *XORCipher) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, err error) {
 	defer func() {
 		recover()
 	}()
-	buf := make([]byte, 32*1020)
+	buf := make([]byte, 4096)
 	for {
 		n, er := from.Read(buf)
 		if er != nil {
@@ -94,18 +96,15 @@ func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, er
 		}
 		if n > 0 {
 			var data []byte
-			var err error
-			if !tls {
-				data, err = or.Encrypt(buf[:n])
-				if err != nil {
-					return n, err
-				}
+			/*if !tls {
+				data, _ = xor.Encrypt(buf[:n])
 			} else {
 				data = buf[:n]
-			}
+			}*/
+			data, _ = xor.Encrypt(buf[:n])
 			//log.Printf("EncryptFromTo %d \n%v\n", len(endata), endata)
 			// write
-			n, er = or.Write(data, to)
+			n, er = xor.Write(data, to)
 			if er != nil {
 				return n, er
 			}
@@ -114,7 +113,7 @@ func (or *OORR) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, er
 	}
 }
 
-func (or *OORR) Write(data []byte, writer io.Writer) (n int, err error) {
+func (xor *XORCipher) Write(data []byte, writer io.Writer) (n int, err error) {
 	lens := len(data)
 	writen := 0
 	for {

@@ -1,10 +1,9 @@
 package cipher
 
 import (
-	"encoding/binary"
 	"github.com/xtaci/kcp-go"
-	"net"
 	"io"
+	"net"
 )
 
 func NewSalsa20(key []byte) (Cipher, error) {
@@ -26,24 +25,16 @@ func (s20 *Salsa20) ReadPackageFrom(from net.Conn, buf []byte, tls bool) ([]byte
 	var data []byte
 	var er error
 	var n int
-	if !tls {
-		n, er = io.ReadFull(from, buf[:4])
-		if er != nil {
-			return nil, er
-		}
-		pkgLen := binary.BigEndian.Uint32(buf[:4])
-		n, er = io.ReadFull(from, buf[:pkgLen])
-		if er != nil {
-			return nil, er
-		}
+	n, er = from.Read(buf)
+	if er != nil {
+		return nil, er
+	}
+	/*if !tls {
 		data, er = s20.Decrypt(buf[:n])
 	} else {
-		n, er = from.Read(buf)
-		if er != nil {
-			return nil, er
-		}
 		data = buf[:n]
-	}
+	}*/
+	data, er = s20.Decrypt(buf[:n])
 	if er != nil {
 		return nil, er
 	}
@@ -63,13 +54,17 @@ func (s20 *Salsa20) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int
 		if n > 0 {
 			var data []byte
 			var err error
-			if !tls {
+			/*if !tls {
 				data, err = s20.Encrypt(buf[:n])
 				if err != nil {
 					return n, err
 				}
 			} else {
 				data = buf[:n]
+			}*/
+			data, err = s20.Encrypt(buf[:n])
+			if err != nil {
+				return n, err
 			}
 			// write
 			n, er = s20.Write(data, to)
@@ -81,11 +76,9 @@ func (s20 *Salsa20) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int
 }
 
 func (s20 *Salsa20) Encrypt(src []byte) ([]byte, error) {
-	s20.crypt.Encrypt(src, src)
-	head := make([]byte, 4)
-	binary.BigEndian.PutUint32(head, uint32(len(src)))
-	data := append(head, src...)
-	return data, nil
+	dst := make([]byte, len(src))
+	s20.crypt.Encrypt(dst, src)
+	return dst, nil
 }
 
 func (s20 *Salsa20) Decrypt(src []byte) ([]byte, error) {

@@ -4,13 +4,13 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"hoz/cipher"
 	"hoz/pkg"
 	"io"
 	"net"
 	"net/http"
 	"runtime/debug"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -22,146 +22,176 @@ type Connection struct {
 }
 
 func (c *Connection) handle() {
-	tls := false
-	var remote net.Conn
-	var err error
-	buf := make([]byte, 32*1024)
 	defer func() {
 		if r := recover(); r != nil {
 			LOG.Printf("Recover from handle, %v, Stack::\n%s\n", r, debug.Stack())
 		}
-		c.conn.Close()
-		if remote != nil {
-			remote.Close()
-		}
+		_ = c.conn.Close()
 	}()
 	if c.s.RemoteAddr == "" {
-		// TODO hoz server side more self handshake
-		// read pkg length
-		pack, err := c.reader.ReadPackageFrom(c.conn, buf, tls)
-		//LOG.Println(string(pack))
-		if err != nil {
-			LOG.Println(err)
-			return
-		}
-		// parse host
-		br := bufio.NewReader(bytes.NewReader(pack))
-		req, err := http.ReadRequest(br)
-		if err != nil {
-			LOG.Printf("ReadRequest error %v\n", err)
-			return
-		}
-		host := req.URL.Host
-		if len(host) > 0 && strings.Index(host, ":") == -1 {
-			host += ":80"
-		} else if host == "" {
-			host = fmt.Sprint(req.Header.Get("Shost"), ":", req.Header.Get("Sport"))
-		}
-		// dial remote
-		remote, err = net.DialTimeout("tcp", host, time.Second*3)
-		if err != nil {
-			LOG.Printf("dial imeout remote error %v\n", err)
-			return
-		}
-		switch req.Method {
-		case "SOCKS5":
-			// response socks5 established
-			ok := c.writeExBytes([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, c.conn)
-			if !ok {
-				return
-			}
-		case "CONNECT":
-			established := []byte("HTTP/1.1 200 Connection established\r\n\r\n")
-			established, err = c.s.cipher.Encrypt(established)
-			if err != nil {
-				return
-			}
-			_, err = c.writer.Write(established, c.conn)
-			if err == nil {
-				LOG.Println("Connection established succeed.")
-			} else {
-				return
-			}
-			tls = true
-		default:
-			// write http pack to real host
-			_, err = c.writer.Write(pack, remote)
-			if err != nil {
-				return
-			}
-			LOG.Println("HTTP write request.")
-		}
-		// server encrypt remote to client
-		go func() {
-			c.writer.EncryptFromTo(remote, c.conn, tls)
-			c.conn.Close()
-		}()
-		for {
-			// read pkg length
-			pack, err = c.reader.ReadPackageFrom(c.conn, buf, tls)
-			if err != nil {
-				LOG.Println(err)
-				return
-			}
-			_, err = c.writer.Write(pack, remote)
-			if err != nil {
-				return
-			}
-		}
+		c.serverSide()
 	} else {
-		// TODO hoz client side more self handshake
-		remote, err = net.DialTimeout("tcp", c.s.RemoteAddr, time.Second*5)
+		c.clientSide()
+	}
+}
+
+func (server *Connection) serverSide() {
+	var remote net.Conn
+	var err error
+	buf := make([]byte, 4096)
+	n, err := server.conn.Read(buf)
+	if err != nil {
+		LOG.Println("serverSide read first time error ", err)
+		return
+	}
+	// decode
+	data, _ := server.s.cipher.Decrypt(buf[:n])
+	// parse host
+	br := bufio.NewReader(bytes.NewReader(data))
+	req, err := http.ReadRequest(br)
+	if err != nil {
+		LOG.Printf("Http ReadRequest error %v\n", err)
+		return
+	}
+	host := req.URL.Host
+	if len(host) > 0 && strings.Index(host, ":") == -1 {
+		host += ":80"
+	} else if host == "" {
+		host = fmt.Sprint(req.Header.Get("Shost"), ":", req.Header.Get("Sport"))
+	}
+	LOG.Println("try connect real host::" + host)
+	// dial remote
+	remote, err = net.DialTimeout("tcp", host, time.Second*5)
+	if err != nil {
+		LOG.Printf("dial imeout real remote error %v\n", err)
+		return
+	}
+	defer func() {
+		_ = remote.Close()
+		_ = server.conn.Close()
+	}()
+	var established []byte
+	switch req.Method {
+	case "SOCKS5":
+		// response socks5 established
+		established = []byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
+	case "CONNECT":
+		established = []byte("HTTP/1.1 200 Connection established\r\n\r\n")
+	default:
+		// write http pack to real host
+		_, err = remote.Write(data)
 		if err != nil {
-			LOG.Printf("net dial failed err %s >> %s\n", err.Error(), c.s.RemoteAddr)
+			LOG.Println("Write HTTP header to remote error")
 			return
 		}
-		// try handshake socks5
-		ok, data, _ := c.handshakeSocks(buf)
+		LOG.Println("HTTP write request.")
+	}
+	if len(established) > 0 {
+		data, _ = server.s.cipher.Encrypt(established)
+		_, err = server.conn.Write(data)
+		if err != nil {
+			LOG.Println("write established error ", err)
+			return
+		}
+	}
+	pipe(server.conn, remote, server.s.cipher, true)
+}
+
+func (client *Connection) clientSide() {
+	remote, err := net.DialTimeout("tcp", client.s.RemoteAddr, time.Second*10)
+	if err != nil {
+		LOG.Printf("net dial failed err %s >> %s\n", err.Error(), client.s.RemoteAddr)
+		return
+	}
+	defer func() {
+		_ = remote.Close()
+		_ = client.conn.Close()
+	}()
+	// try handshake socks5
+	buf := make([]byte, 4096)
+	ok, data, _ := client.handshakeSocks(buf)
+	if ok {
+		// socks5 read
+		ok, data, err = client.parseSocks(buf)
 		if ok {
-			// socks5 read
-			ok, data, err = c.parseSocks(buf)
-			if ok {
-				// send socks5 to http
-				ok = c.writeExBytes(data, remote)
-				if !ok {
-					return
-				}
-			} else {
-				return
-			}
-		} else if data != nil {
-			//LOG.Println(string(data))
-			// http read bytes to remote
-			ok = c.writeExBytes(data, remote)
+			// send socks5 to http
+			ok = client.writeExBytes(data, remote)
 			if !ok {
 				return
 			}
 		} else {
-			// socks5 ver check failed
 			return
 		}
-		var one sync.Once
+	} else if data != nil {
+		//LOG.Println(string(data))
+		// http read bytes to remote
+		ok = client.writeExBytes(data, remote)
+		if !ok {
+			return
+		}
+	} else {
+		// socks5 ver check failed
+		return
+	}
+	pipe(client.conn, remote, client.s.cipher, false)
+}
+
+func pipe(local, remote net.Conn, cihper cipher.Cipher, localSide bool) {
+	defer func() {
+		_ = local.Close()
+		_ = remote.Close()
+	}()
+	var errChan = make(chan error)
+	buf := make([]byte, 4096)
+	go func() {
 		for {
-			pack, err := c.reader.ReadPackageFrom(remote, buf, tls)
-			one.Do(func() {
-				if string(pack) == "HTTP/1.1 200 Connection established\r\n\r\n" {
-					tls = true
-				}
-				go func() {
-					c.writer.EncryptFromTo(c.conn, remote, tls)
-					remote.Close()
-				}()
-			})
+			// copy remote <=> local <=> client
+			n, err := remote.Read(buf)
 			if err != nil {
-				//LOG.Printf("Client side closed %s\n", err.Error())
-				return
+				LOG.Println("remote read error ", err)
+				errChan <- err
+				break
 			}
-			_, err = c.writer.Write(pack, c.conn)
+			// decode
+			var pack []byte
+			if localSide {
+				pack, _ = cihper.Decrypt(buf[:n])
+			} else {
+				pack = buf[:n]
+			}
+			_, err = local.Write(pack)
 			if err != nil {
-				return
+				LOG.Println("copy remote to client error ", err)
+				errChan <- err
 			}
 		}
-	}
+
+	}()
+	go func() {
+		for {
+			n, err := local.Read(buf)
+			if err != nil {
+				LOG.Println("remote read error ", err)
+				errChan <- err
+				break
+			}
+			var pack []byte
+			// encode to remote
+			if localSide {
+				pack, _ = cihper.Encrypt(buf[:n])
+			} else {
+				pack = buf[:n]
+			}
+			n, err = remote.Write(pack)
+			if err != nil {
+				LOG.Println("copy remote to client error ", err)
+				errChan <- err
+				break
+			}
+		}
+	}()
+	err := <-errChan
+	LOG.Println("client side handle end err::", err)
 }
 
 func (c *Connection) writeExBytes(data []byte, remote net.Conn) bool {

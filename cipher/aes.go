@@ -1,18 +1,19 @@
 package cipher
 
 import (
-	"encoding/binary"
 	"github.com/xtaci/kcp-go"
-	"net"
 	"io"
+	"net"
 )
 
 func NewAes(key []byte) (Cipher, error) {
 	s20 := new(Aes)
 	var err error
-	if len(key) > 16 {
-		key = key[:16]
+	l8 := len(key) / 8
+	if l8 == 0 {
+		panic("key is too short")
 	}
+	key = key[:8*l8]
 	s20.crypt, err = kcp.NewAESBlockCrypt(key)
 	if err != nil {
 		return nil, err
@@ -29,24 +30,16 @@ func (ae *Aes) ReadPackageFrom(from net.Conn, buf []byte, tls bool) ([]byte, err
 	var data []byte
 	var er error
 	var n int
-	if !tls {
-		n, er = io.ReadFull(from, buf[:4])
-		if er != nil {
-			return nil, er
-		}
-		pkgLen := binary.BigEndian.Uint32(buf[:4])
-		n, er = io.ReadFull(from, buf[:pkgLen])
-		if er != nil {
-			return nil, er
-		}
+	n, er = from.Read(buf)
+	if er != nil {
+		return nil, er
+	}
+	/*if !tls {
 		data, er = ae.Decrypt(buf[:n])
 	} else {
-		n, er = from.Read(buf)
-		if er != nil {
-			return nil, er
-		}
 		data = buf[:n]
-	}
+	}*/
+	data, er = ae.Decrypt(buf[:n])
 	if er != nil {
 		return nil, er
 	}
@@ -66,13 +59,17 @@ func (ae *Aes) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, err
 		if n > 0 {
 			var data []byte
 			var err error
-			if !tls {
+			/*if !tls {
 				data, err = ae.Encrypt(buf[:n])
 				if err != nil {
 					return n, err
 				}
 			} else {
 				data = buf[:n]
+			}*/
+			data, err = ae.Encrypt(buf[:n])
+			if err != nil {
+				return n, err
 			}
 			// write
 			n, er = ae.Write(data, to)
@@ -85,11 +82,9 @@ func (ae *Aes) EncryptFromTo(from io.Reader, to io.Writer, tls bool) (n int, err
 }
 
 func (ae *Aes) Encrypt(src []byte) ([]byte, error) {
-	ae.crypt.Encrypt(src, src)
-	head := make([]byte, 4)
-	binary.BigEndian.PutUint32(head, uint32(len(src)))
-	data := append(head, src...)
-	return data, nil
+	dst := make([]byte, len(src))
+	ae.crypt.Encrypt(dst, src)
+	return dst, nil
 }
 
 func (ae *Aes) Decrypt(src []byte) ([]byte, error) {
