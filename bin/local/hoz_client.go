@@ -19,6 +19,7 @@ func main() {
 		Addr:       *addr,
 		RemoteAddr: *remote,
 		Cipher:     *password,
+		KCP:        true,
 	})
 	/*go func() {
 		http.ListenAndServe(":6061", nil)

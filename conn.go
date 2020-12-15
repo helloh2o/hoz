@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"github.com/xtaci/kcp-go"
 	"hoz/cipher"
 	"io"
 	"net"
@@ -84,8 +85,8 @@ func (server *Connection) serverSide() {
 		LOG.Println("HTTP write request.")
 	}
 	if len(established) > 0 {
-		data, _ = server.s.cipher.Encrypt(established)
-		_, err = server.conn.Write(data)
+		established, _ := server.s.cipher.Encrypt(established)
+		_, err = server.conn.Write(established)
 		if err != nil {
 			LOG.Println("write established error ", err)
 			return
@@ -95,7 +96,13 @@ func (server *Connection) serverSide() {
 }
 
 func (client *Connection) clientSide() {
-	remote, err := net.DialTimeout("tcp", client.s.RemoteAddr, time.Second*10)
+	var remote net.Conn
+	var err error
+	if client.s.Config.KCP {
+		remote, err = kcp.DialWithOptions(client.s.RemoteAddr, nil, 10, 3)
+	} else {
+		remote, err = net.DialTimeout("tcp", client.s.RemoteAddr, time.Second*10)
+	}
 	if err != nil {
 		LOG.Printf("net dial failed err %s >> %s\n", err.Error(), client.s.RemoteAddr)
 		return
@@ -105,7 +112,7 @@ func (client *Connection) clientSide() {
 		_ = client.conn.Close()
 	}()
 	// try handshake socks5
-	buf := make([]byte, 4096)
+	buf := make([]byte, 81920)
 	ok, data, _ := client.handshakeSocks(buf)
 	if ok {
 		// socks5 read
@@ -140,7 +147,7 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 	}()
 	var errChan = make(chan error)
 	go func() {
-		buf1 := make([]byte, 4096)
+		buf1 := make([]byte, 81920)
 		for {
 			// copy remote <=> local <=> client
 			n, err := remote.Read(buf1)

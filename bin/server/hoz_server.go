@@ -15,6 +15,7 @@ func main() {
 	s := hoz.NewServer(hoz.Config{
 		Addr:   *addr,
 		Cipher: *password,
+		KCP:    true,
 	})
 	s.Start()
 }

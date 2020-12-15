@@ -36,7 +36,7 @@ func (xor *XORCipher) updateMaxLen(max int) {
 }
 
 func (xor *XORCipher) Encrypt(src []byte) ([]byte, error) {
-	//return src,nil
+	return src, nil
 	xor.trySelfUpdate(len(src))
 	for i, b := range src {
 		src[i] = b ^ byte(i%255) ^ xor.remainder[i]
@@ -45,7 +45,7 @@ func (xor *XORCipher) Encrypt(src []byte) ([]byte, error) {
 }
 
 func (xor *XORCipher) Decrypt(src []byte) ([]byte, error) {
-	//return src,nil
+	return src, nil
 	xor.trySelfUpdate(len(src))
 	for i, b := range src {
 		src[i] = b ^ byte(i%255) ^ xor.remainder[i]

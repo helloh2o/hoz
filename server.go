@@ -2,6 +2,7 @@ package hoz
 
 import (
 	"errors"
+	"github.com/xtaci/kcp-go"
 	"hoz/cipher"
 	"net"
 	"strings"
@@ -20,7 +21,13 @@ func NewServer(config Config) *Server {
 }
 
 func (s *Server) Start() {
-	ln, err := net.Listen("tcp", s.Config.Addr)
+	var ln net.Listener
+	var err error
+	if s.Config.RemoteAddr == "" && s.Config.KCP {
+		ln, err = kcp.ListenWithOptions(s.Config.Addr, nil, 10, 3)
+	} else {
+		ln, err = net.Listen("tcp", s.Config.Addr)
+	}
 	if err != nil {
 		LOG.Printf("server startup err %v \n", err)
 	}
