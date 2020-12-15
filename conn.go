@@ -112,7 +112,7 @@ func (client *Connection) clientSide() {
 		_ = client.conn.Close()
 	}()
 	// try handshake socks5
-	buf := make([]byte, 81920)
+	buf := make([]byte, 4096)
 	ok, data, _ := client.handshakeSocks(buf)
 	if ok {
 		// socks5 read
@@ -172,7 +172,7 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 
 	}()
 	go func() {
-		buf2 := make([]byte, 4096)
+		buf2 := make([]byte, 81920)
 		for {
 			n, err := local.Read(buf2)
 			if err != nil {
