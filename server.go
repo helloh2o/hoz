@@ -40,12 +40,6 @@ func (s *Server) Start() {
 		if err != nil {
 			LOG.Fatalf("Init aes cipher error %v\n", err)
 		}
-	case "sal":
-		sa20, err := cipher.NewSalsa20([]byte(key))
-		if err != nil {
-			LOG.Fatalf("Init sa20 cipher error %v\n", err)
-		}
-		waper = sa20
 	default:
 		LOG.Fatalf("Unsuport cipher %s \n", cipherName)
 	}

@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"fmt"
 	"hoz/cipher"
-	"hoz/pkg"
 	"io"
 	"net"
 	"net/http"
@@ -15,10 +14,8 @@ import (
 )
 
 type Connection struct {
-	reader pkg.PackageReader
-	writer pkg.PackageWriter
-	conn   net.Conn
-	s      *Server
+	conn net.Conn
+	s    *Server
 }
 
 func (c *Connection) handle() {
@@ -142,11 +139,11 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 		_ = remote.Close()
 	}()
 	var errChan = make(chan error)
-	buf := make([]byte, 4096)
 	go func() {
+		buf1 := make([]byte, 4096)
 		for {
 			// copy remote <=> local <=> client
-			n, err := remote.Read(buf)
+			n, err := remote.Read(buf1)
 			if err != nil {
 				LOG.Println("remote read error ", err)
 				errChan <- err
@@ -155,9 +152,9 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 			// decode
 			var pack []byte
 			if localSide {
-				pack, _ = cp.Decrypt(buf[:n])
+				pack, _ = cp.Decrypt(buf1[:n])
 			} else {
-				pack, _ = cp.Encrypt(buf[:n])
+				pack, _ = cp.Encrypt(buf1[:n])
 			}
 			_, err = local.Write(pack)
 			if err != nil {
@@ -168,8 +165,9 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 
 	}()
 	go func() {
+		buf2 := make([]byte, 4096)
 		for {
-			n, err := local.Read(buf)
+			n, err := local.Read(buf2)
 			if err != nil {
 				LOG.Println("local read error ", err)
 				LOG.Println("local remote addr  ", local.RemoteAddr())
@@ -179,9 +177,9 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 			var pack []byte
 			// encode to remote
 			if localSide {
-				pack, _ = cp.Encrypt(buf[:n])
+				pack, _ = cp.Encrypt(buf2[:n])
 			} else {
-				pack, _ = cp.Decrypt(buf[:n])
+				pack, _ = cp.Decrypt(buf2[:n])
 			}
 			n, err = remote.Write(pack)
 			if err != nil {
