@@ -1,0 +1,9 @@
+apt-get update
+apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+apt-get update
+apt-get install -y docker-ce
+
+If you’re using Docker CE on Ubuntu, take Docker back one patch version (if you’re on Debian, replace debian for ubuntu):
+apt-get install docker-ce=18.06.1~ce~3-0~ubuntu
