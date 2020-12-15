@@ -3,10 +3,8 @@ package hoz
 import (
 	"errors"
 	"hoz/cipher"
-	"hoz/pkg"
 	"net"
 	"strings"
-	"time"
 )
 
 type Server struct {
@@ -32,8 +30,6 @@ func (s *Server) Start() {
 		return
 	}
 	var waper cipher.Cipher
-	var reader pkg.PackageReader
-	var writer pkg.PackageWriter
 	var cipherName = pass[0]
 	var key = pass[1]
 	switch cipherName {
@@ -55,17 +51,14 @@ func (s *Server) Start() {
 	}
 	LOG.Printf("cipher_name=%s, password=%s\n", cipherName, key)
 	s.cipher = waper
-	reader = waper.(pkg.PackageReader)
-	writer = waper.(pkg.PackageWriter)
 	LOG.Printf("Server startup, listen on %s\n", s.Config.Addr)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
 			LOG.Printf("Accept connection err %v \n", err)
-			time.Sleep(time.Nanosecond * 100)
-			continue
+			panic(err)
 		}
-		nc := &Connection{s: s, conn: conn, reader: reader, writer: writer}
+		nc := &Connection{s: s, conn: conn}
 		go nc.handle()
 	}
 }

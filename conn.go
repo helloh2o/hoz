@@ -94,7 +94,7 @@ func (server *Connection) serverSide() {
 			return
 		}
 	}
-	pipe(server.conn, remote, server.s.cipher, true)
+	pipe(server.conn, remote, server.s.cipher, false)
 }
 
 func (client *Connection) clientSide() {
@@ -133,10 +133,10 @@ func (client *Connection) clientSide() {
 		// socks5 ver check failed
 		return
 	}
-	pipe(client.conn, remote, client.s.cipher, false)
+	pipe(client.conn, remote, client.s.cipher, true)
 }
 
-func pipe(local, remote net.Conn, cihper cipher.Cipher, localSide bool) {
+func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 	defer func() {
 		_ = local.Close()
 		_ = remote.Close()
@@ -155,9 +155,9 @@ func pipe(local, remote net.Conn, cihper cipher.Cipher, localSide bool) {
 			// decode
 			var pack []byte
 			if localSide {
-				pack, _ = cihper.Decrypt(buf[:n])
+				pack, _ = cp.Decrypt(buf[:n])
 			} else {
-				pack = buf[:n]
+				pack, _ = cp.Encrypt(buf[:n])
 			}
 			_, err = local.Write(pack)
 			if err != nil {
@@ -171,27 +171,28 @@ func pipe(local, remote net.Conn, cihper cipher.Cipher, localSide bool) {
 		for {
 			n, err := local.Read(buf)
 			if err != nil {
-				LOG.Println("remote read error ", err)
+				LOG.Println("local read error ", err)
+				LOG.Println("local remote addr  ", local.RemoteAddr())
 				errChan <- err
 				break
 			}
 			var pack []byte
 			// encode to remote
 			if localSide {
-				pack, _ = cihper.Encrypt(buf[:n])
+				pack, _ = cp.Encrypt(buf[:n])
 			} else {
-				pack = buf[:n]
+				pack, _ = cp.Decrypt(buf[:n])
 			}
 			n, err = remote.Write(pack)
 			if err != nil {
-				LOG.Println("copy remote to client error ", err)
+				LOG.Println("copy client to remote error ", err)
 				errChan <- err
 				break
 			}
 		}
 	}()
 	err := <-errChan
-	LOG.Println("client side handle end err::", err)
+	LOG.Println("pipe end err::", err)
 }
 
 func (c *Connection) writeExBytes(data []byte, remote net.Conn) bool {
