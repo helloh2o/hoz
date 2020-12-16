@@ -9,8 +9,9 @@ import (
 
 var (
 	addr     = flag.String("addr", ":1080", "Local hoz listen address")
+	kcp      = flag.Bool("kcp", false, "use kcp protocol")
 	remote   = flag.String("remote", "127.0.0.1:10800", "Remote hoz server address")
-	password = flag.String("password", "oor://!@adDxS$&(dl/*?QKc$mJ?PdTkajGzSNMILH{t4_hvFR>", "Cipher password string")
+	password = flag.String("password", "little://!@adDxS$&(dl/*?QKc$mJ?PdTkajGzSNMILH{t4_hvFR>", "Cipher password string")
 )
 
 func main() {
@@ -19,7 +20,7 @@ func main() {
 		Addr:       *addr,
 		RemoteAddr: *remote,
 		Cipher:     *password,
-		KCP:        true,
+		KCP:        *kcp,
 	})
 	/*go func() {
 		http.ListenAndServe(":6061", nil)

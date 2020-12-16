@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"github.com/xtaci/kcp-go"
 	"hoz/cipher"
-	"io"
 	"net"
 	"net/http"
 	"runtime/debug"
@@ -113,10 +112,10 @@ func (client *Connection) clientSide() {
 	}()
 	// try handshake socks5
 	buf := make([]byte, 4096)
-	ok, data, _ := client.handshakeSocks(buf)
+	ok, data, _ := handshakeSocks(client.conn, buf)
 	if ok {
 		// socks5 read
-		ok, data, err = client.parseSocks(buf)
+		ok, data, err = parseSocks(client.conn, buf)
 		if ok {
 			// send socks5 to http
 			ok = client.writeExBytes(data, remote)
@@ -147,7 +146,7 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 	}()
 	var errChan = make(chan error)
 	go func() {
-		buf1 := make([]byte, 81920)
+		buf1 := make([]byte, 16777217)
 		for {
 			// copy remote <=> local <=> client
 			n, err := remote.Read(buf1)
@@ -163,16 +162,21 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 			} else {
 				pack, _ = cp.Encrypt(buf1[:n])
 			}
-			_, err = local.Write(pack)
+		write:
+			wn, err := local.Write(pack)
 			if err != nil {
 				LOG.Println("copy remote to client error ", err)
 				errChan <- err
+			}
+			if wn < len(pack) {
+				pack = pack[n:]
+				goto write
 			}
 		}
 
 	}()
 	go func() {
-		buf2 := make([]byte, 81920)
+		buf2 := make([]byte, 16777217)
 		for {
 			n, err := local.Read(buf2)
 			if err != nil {
@@ -188,11 +192,16 @@ func pipe(local, remote net.Conn, cp cipher.Cipher, localSide bool) {
 			} else {
 				pack, _ = cp.Decrypt(buf2[:n])
 			}
-			n, err = remote.Write(pack)
+		write:
+			wn, err := remote.Write(pack)
 			if err != nil {
 				LOG.Println("copy client to remote error ", err)
 				errChan <- err
 				break
+			}
+			if wn < len(pack) {
+				pack = pack[n:]
+				goto write
 			}
 		}
 	}()
@@ -211,53 +220,4 @@ func (c *Connection) writeExBytes(data []byte, remote net.Conn) bool {
 		return false
 	}
 	return true
-}
-func (c *Connection) handshakeSocks(buf []byte) (bool, []byte, error) {
-	handshake := func(pkg []byte, conn net.Conn) bool {
-		ver := pkg[0]
-		if ver != 0x05 {
-			LOG.Printf("unsupport socks version %d \n", ver)
-			return false
-		}
-		resp := pkg[:0]
-		resp = append(resp, 0x05)
-		resp = append(resp, 0x00)
-		n, err := conn.Write(resp)
-		if n != 2 || err != nil {
-			return false
-		}
-		// handshake over
-		return true
-	}
-	n, er := io.ReadAtLeast(c.conn, buf, 3)
-	if er != nil {
-		return false, nil, er
-	}
-	// socks5
-	if buf[0] == 0x05 {
-		ok := handshake(buf[:n], c.conn)
-		return ok, nil, nil
-	}
-	// http, buf is left byte
-	return false, buf[:n], nil
-}
-
-func (c *Connection) parseSocks(buf []byte) (bool, []byte, error) {
-	c.conn.SetReadDeadline(time.Now().Add(time.Second * 2))
-	n, er := io.ReadAtLeast(c.conn, buf, 6)
-	c.conn.SetReadDeadline(time.Time{})
-	if er != nil {
-		return false, nil, er
-	}
-	// socks5
-	if buf[0] == 0x05 {
-		to5, ok := parseSocks5Request(buf[:n])
-		if !ok {
-			c.conn.Write(to5)
-			return false, nil, nil
-		}
-		return true, to5, nil
-	}
-	// http, buf is left byte
-	return false, buf[:n], nil
 }

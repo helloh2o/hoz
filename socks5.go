@@ -3,8 +3,10 @@ package hoz
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net"
 	"strconv"
+	"time"
 )
 
 type socks5 interface {
@@ -65,4 +67,54 @@ func to5Connect(host, port string) []byte {
 	bf.WriteString(fmt.Sprintf("Sport: %s\r\n", port))
 	bf.WriteString("\r\n")
 	return bf.Bytes()
+}
+
+func handshakeSocks(c net.Conn, buf []byte) (bool, []byte, error) {
+	handshake := func(pkg []byte, conn net.Conn) bool {
+		ver := pkg[0]
+		if ver != 0x05 {
+			LOG.Printf("unsupport socks version %d \n", ver)
+			return false
+		}
+		resp := pkg[:0]
+		resp = append(resp, 0x05)
+		resp = append(resp, 0x00)
+		n, err := conn.Write(resp)
+		if n != 2 || err != nil {
+			return false
+		}
+		// handshake over
+		return true
+	}
+	n, er := io.ReadAtLeast(c, buf, 3)
+	if er != nil {
+		return false, nil, er
+	}
+	// socks5
+	if buf[0] == 0x05 {
+		ok := handshake(buf[:n], c)
+		return ok, nil, nil
+	}
+	// http, buf is left byte
+	return false, buf[:n], nil
+}
+
+func parseSocks(conn net.Conn, buf []byte) (bool, []byte, error) {
+	conn.SetReadDeadline(time.Now().Add(time.Second * 2))
+	n, er := io.ReadAtLeast(conn, buf, 6)
+	conn.SetReadDeadline(time.Time{})
+	if er != nil {
+		return false, nil, er
+	}
+	// socks5
+	if buf[0] == 0x05 {
+		to5, ok := parseSocks5Request(buf[:n])
+		if !ok {
+			conn.Write(to5)
+			return false, nil, nil
+		}
+		return true, to5, nil
+	}
+	// http, buf is left byte
+	return false, buf[:n], nil
 }

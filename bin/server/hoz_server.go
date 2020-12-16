@@ -7,7 +7,8 @@ import (
 
 var (
 	addr     = flag.String("addr", ":10800", "Local hoz listen address")
-	password = flag.String("password", "oor://!@adDxS$&(dl/*?QKc$mJ?PdTkajGzSNMILH{t4_hvFR>", "Cipher password string")
+	kcp      = flag.Bool("kcp", false, "use kcp protocol")
+	password = flag.String("password", "little://!@adDxS$&(dl/*?QKc$mJ?PdTkajGzSNMILH{t4_hvFR>", "Cipher password string")
 )
 
 func main() {
@@ -15,7 +16,7 @@ func main() {
 	s := hoz.NewServer(hoz.Config{
 		Addr:   *addr,
 		Cipher: *password,
-		KCP:    true,
+		KCP:    *kcp,
 	})
 	s.Start()
 }

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/xtaci/kcp-go"
 	"hoz/cipher"
+	"hoz/cipher/little"
 	"net"
 	"strings"
 )
@@ -40,19 +41,20 @@ func (s *Server) Start() {
 	var cipherName = pass[0]
 	var key = pass[1]
 	switch cipherName {
-	case "oor":
-		waper, err = cipher.NewXORCipher(key)
-	case "aes":
-		waper, err = cipher.NewAes([]byte(key))
+	case "little":
+		pwdStr := "BH1rStJwNP1YIvNI4Y+8ZVWyqsX47QCTOJTpGLnL2VQHqV0pPu8ZLk3yBc5sRNWmpYjqL2jY9LiFr9EaUsT1Voy3sBadZDKBPQ3g3yP6wOtvrHNxisbuTrPxEHZ6i6sSPAw6mB0rFEsB1OSjXPzlhkmb4lmee1+1aeOgHPaDmUF0vzskwS2iA4TK7ArJ1+fCvWJmY6i2/pDMh1qh3I3PJtBXyBUhET+7w9s5UfcXCVBTQ9beJ1tHC3d5TwgzgkJqkTGkHt1tp2HaTM0fcmd+lY43IP+tsbosJQb7lpqStA94gIlef/AwKnXTQJc1vkZF6Jz5bscCG2CuNhPmKJ8OfA=="
+		pwd, err := little.ParsePassword(pwdStr)
 		if err != nil {
-			LOG.Fatalf("Init aes cipher error %v\n", err)
+			panic(err)
 		}
+		// 混淆加密
+		waper = little.NewCipher(pwd)
 	default:
 		LOG.Fatalf("Unsuport cipher %s \n", cipherName)
 	}
 	LOG.Printf("cipher_name=%s, password=%s\n", cipherName, key)
 	s.cipher = waper
-	LOG.Printf("Server startup, listen on %s\n", s.Config.Addr)
+	LOG.Printf("Server startup, with config %+v", s.Config)
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
